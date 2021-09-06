@@ -120,6 +120,7 @@ class LeveldbDatabase(BaseDatabase):
             date_time = datetime.fromtimestamp(date_time.timestamp(), DB_TZ)
             tmp = BarData("DB", symbol, exchange, date_time)
             tmp.volume = row["volume"]
+            tmp.turnover = row["turnover"]
             tmp.open_interest = row["open_interest"]
             tmp.open_price = row["open_price"]
             tmp.high_price = row["high_price"]
@@ -156,6 +157,7 @@ class LeveldbDatabase(BaseDatabase):
             tmp = TickData("DB", symbol, exchange, date_time)
 
             tmp.name, tmp.volume, tmp.open_interest = row["name"], row["volume"], row["open_interest"]
+            tmp.turnover = row["turnover"]
             tmp.last_price, tmp.last_volume = row["last_price"], row["last_volume"]
             tmp.limit_up, tmp.limit_down = row["limit_up"], row["limit_down"]
             tmp.open_price, tmp.high_price = row["open_price"], row["high_price"]
@@ -172,6 +174,7 @@ class LeveldbDatabase(BaseDatabase):
             tmp.ask_volume_1, tmp.ask_volume_2 = row["ask_volume_1"], row["ask_volume_2"]
             tmp.ask_volume_3, tmp.ask_volume_4 = row["ask_volume_3"], row["ask_volume_4"]
             tmp.ask_volume_5 = row["ask_volume_5"]
+            tmp.localtime = row["localtime"],
 
             tmp.vt_symbol = vt_symbol
 
