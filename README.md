@@ -8,12 +8,11 @@
     <img src ="https://img.shields.io/badge/version-1.0.0-blueviolet.svg"/>
     <img src ="https://img.shields.io/badge/platform-linux|windows-yellow.svg"/>
     <img src ="https://img.shields.io/badge/python-3.7-blue.svg" />
-    <img src ="https://img.shields.io/github/license/vnpy/vnpy.svg?color=orange"/>
 </p>
 
 ## 说明
 
-为vn.py提供了LevelDB数据库的使用支持
+基于plyvel开发的LevelDB数据库接口，需要首先安装leveldb数据库才能安装使用。
 
 ## 安装
 
