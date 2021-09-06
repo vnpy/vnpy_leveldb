@@ -218,6 +218,3 @@ class LeveldbDatabase(BaseDatabase):
             value = pickle.loads(value)
             data.append((key, value))
         return data
-
-
-database_manager = LeveldbDatabase()
