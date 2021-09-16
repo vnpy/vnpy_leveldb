@@ -73,6 +73,8 @@ class LeveldbDatabase(BaseDatabase):
         overview_value = pickle.dumps(d)
         db.put(bar_overview_key.encode(), overview_value)
 
+        return True
+
     def save_tick_data(self, ticks: List[TickData]) -> bool:
         """保存TICK数据"""
         # 将TickData数据提取后以元组的形式依次保存进列表中，并调整时区
@@ -94,6 +96,8 @@ class LeveldbDatabase(BaseDatabase):
         for data in datas:
             wb.put(data[0].encode(), data[1])
         wb.write()
+
+        return True
 
     def load_bar_data(
         self,
