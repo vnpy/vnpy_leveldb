@@ -67,25 +67,18 @@ class LeveldbDatabase(BaseDatabase):
 
     def save_tick_data(self, ticks: List[TickData]) -> bool:
         """保存TICK数据"""
-        # 将TickData数据提取后以元组的形式依次保存进列表中，并调整时区
-        datas: List[tuple] = []
-        for tick in ticks:
-            tick.datetime = convert_tz(tick.datetime)
-            rowKey = "Tick" + "|" + tick.exchange.value + "-" + tick.symbol + "|" + tick.datetime.strftime("%Y-%m-%d %H:%M:%S")
-            d = tick.__dict__
-            d.pop("gateway_name")
-            d.pop("vt_symbol")
-            d.pop("exchange")
-            d.pop("symbol")
-            d.pop("datetime")
-            rowValue = pickle.dumps(d)
-            datas.append((rowKey, rowValue))
+        # 获取子数据库
+        tick: TickData = ticks[0]
+        prefix = generate_tick_prefix(tick.symbol, tick.exchange)
+        db: plyvel.DB = self.tick_db.prefixed_db(prefix.encode())
 
-        # 使用upsert操作将数据更新到数据库中
-        wb = self.db.write_batch()
-        for data in datas:
-            wb.put(data[0].encode(), data[1])
-        wb.write()
+        # 批量写入数据
+        with db.write_batch() as wb:
+            for tick in ticks:
+                key = str(tick.datetime).encode()
+                value = pickle.dumps(tick)
+                wb.put(key, value)
+            wb.write()
 
         return True
 
@@ -111,7 +104,7 @@ class LeveldbDatabase(BaseDatabase):
             include_start=True,
             include_stop=True
         ):
-            bar = pickle.loads(value)
+            bar: BarData = pickle.loads(value)
             bars.append(bar)
 
         return bars
@@ -124,45 +117,22 @@ class LeveldbDatabase(BaseDatabase):
         end: datetime
     ) -> List[BarData]:
         """读取TICK数据"""
+        # 获取子数据库
+        prefix = generate_tick_prefix(symbol, exchange)
+        db: plyvel.DB = self.tick_db.prefixed_db(prefix.encode())
+
+        # 读取数据
         ticks: List[TickData] = []
-        vt_symbol = f"{symbol}.{exchange.value}"
-        # 从pre库中提取，减小搜索范围，提高速度
-        prefix = "Tick" + "|" + exchange.value + "-" + symbol + "|"
-        sub_db = self.db.prefixed_db(prefix.encode())
-        start_time = start.strftime("%Y-%m-%d %H:%M:%S")
-        end_time = end.strftime("%Y-%m-%d %H:%M:%S")
-        for key, value in sub_db.iterator(start=start_time.encode(), include_start=True,
-                                          stop=end_time.encode(), include_stop=True):
-            time = key.decode()
-            row = pickle.loads(value)
 
-            date_time = datetime.strptime(time, "%Y-%m-%d %H:%M:%S")
-            date_time = datetime.fromtimestamp(date_time.timestamp(), DB_TZ)
-            tmp = TickData("DB", symbol, exchange, date_time)
+        for _, value in db.iterator(
+            start=str(start).encode(),
+            stop=str(end).encode(),
+            include_start=True,
+            include_stop=True
+        ):
+            tick: TickData = pickle.loads(value)
+            ticks.append(tick)
 
-            tmp.name, tmp.volume, tmp.open_interest = row["name"], row["volume"], row["open_interest"]
-            tmp.turnover = row["turnover"]
-            tmp.last_price, tmp.last_volume = row["last_price"], row["last_volume"]
-            tmp.limit_up, tmp.limit_down = row["limit_up"], row["limit_down"]
-            tmp.open_price, tmp.high_price = row["open_price"], row["high_price"]
-            tmp.low_price, tmp.pre_close = row["low_price"], row["pre_close"]
-            tmp.bid_price_1, tmp.bid_price_2 = row["bid_price_1"], row["bid_price_2"]
-            tmp.bid_price_3, tmp.bid_price_4 = row["bid_price_3"], row["bid_price_4"]
-            tmp.bid_price_5 = row["bid_price_5"]
-            tmp.ask_price_1, tmp.ask_price_2 = row["ask_price_1"], row["ask_price_2"]
-            tmp.ask_price_3, tmp.ask_price_4 = row["ask_price_3"], row["ask_price_4"]
-            tmp.ask_price_5 = row["ask_price_5"]
-            tmp.bid_volume_1, tmp.bid_volume_2 = row["bid_volume_1"], row["bid_volume_2"]
-            tmp.bid_volume_3, tmp.bid_volume_4 = row["bid_volume_3"], row["bid_volume_4"]
-            tmp.bid_volume_5 = row["bid_volume_5"]
-            tmp.ask_volume_1, tmp.ask_volume_2 = row["ask_volume_1"], row["ask_volume_2"]
-            tmp.ask_volume_3, tmp.ask_volume_4 = row["ask_volume_3"], row["ask_volume_4"]
-            tmp.ask_volume_5 = row["ask_volume_5"]
-            tmp.localtime = row["localtime"],
-
-            tmp.vt_symbol = vt_symbol
-
-            ticks.append(tmp)
         return ticks
 
     def delete_bar_data(
