@@ -20,9 +20,5 @@
 
 |名称|含义|必填|举例|
 |---------|----|---|---|
-|database.name|名称|是|mongodb|
-|database.host|地址|是|localhost|
-|database.port|端口|是|27017|
-|database.database|实例|是|vnpy|
-|database.user|用户名|否||
-|database.password|密码|否||
+|database.name|名称|是|leveldb|
+|database.database|实例|是|vnpy_data|
