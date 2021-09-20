@@ -142,17 +142,19 @@ class LeveldbDatabase(BaseDatabase):
         interval: Interval
     ) -> int:
         """删除K线数据"""
-        prefix = "Bar" + "|" + exchange.value + "-" + symbol + "|" + interval.value + "|"
-        sub_db = self.db.prefixed_db(prefix.encode())
+        # 获取子数据库
+        prefix = generate_bar_prefix(symbol, exchange, interval)
+        db: plyvel.DB = self.bar_db.prefixed_db(prefix.encode())
+        
+        # 遍历删除
         count = 0
-        for key, value in sub_db.iterator():
-            sub_db.delete(key)
-            count += 1
 
-        # 删除K线汇总数据
-        exchange_symbol = exchange.value + "-" + symbol
-        bar_overview_key = "BarOverview" + "|" + exchange_symbol + "|" + interval.value
-        self.db.delete(bar_overview_key.encode())
+        with db.write_batch() as wb:
+            for key, _  in db.iterator():
+                count += 1
+                wb.delete(key)
+
+            wb.write()
 
         return count
 
@@ -162,12 +164,19 @@ class LeveldbDatabase(BaseDatabase):
         exchange: Exchange
     ) -> int:
         """删除TICK数据"""
-        prefix = "Tick" + "|" + exchange.value + "-" + symbol + "|"
-        sub_db = self.db.prefixed_db(prefix.encode())
+        # 获取子数据库
+        prefix = generate_tick_prefix(symbol, exchange)
+        db: plyvel.DB = self.tick_db.prefixed_db(prefix.encode())
+        
+        # 遍历删除
         count = 0
-        for key, value in sub_db.iterator():
-            sub_db.delete(key)
-            count += 1
+
+        with db.write_batch() as wb:
+            for key, _  in db.iterator():
+                count += 1
+                wb.delete(key)
+
+            wb.write()
 
         return count
 
