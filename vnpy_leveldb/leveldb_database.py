@@ -45,23 +45,25 @@ class LeveldbDatabase(BaseDatabase):
                 wb.put(key, value)
             wb.write()
 
-        # # 更新K线汇总数据
-        # bar_overview_key = "BarOverview" + "|" + exchange_symbol + "|" + interval
-        # bar_prefix = "Bar" + "|" + exchange_symbol + "|" + interval + "|"
-        # sub_db = self.db.prefixed_db(bar_prefix.encode())
-        # loaded_bars: List[tuple] = []
-        # for key, value in sub_db:
-        #     loaded_bars.append((key, value))
-        # count = len(bars)
-        # start = loaded_bars[0][0].decode()
-        # end = loaded_bars[-1][0].decode()
-        # overview = BarOverview(symbol, Exchange(exchange), Interval(interval))
-        # overview.count = count
-        # overview.start = start
-        # overview.end = end
-        # d = overview.__dict__
-        # overview_value = pickle.dumps(d)
-        # self.db.put(bar_overview_key.encode(), overview_value)
+        # 更新K线汇总数据
+        buf = self.overview_db.get(prefix.encode())
+
+        if not buf:
+            overview: BarOverview = BarOverview(
+                symbol=bar.symbol,
+                exchange=bar.exchange,
+                interval=bar.interval,
+                count=len(bars),
+                start=bars[0].datetime,
+                end=bars[-1].datetime
+            )
+        else:
+            overview: BarOverview = pickle.loads(buf)
+            overview.start = min(overview.start, bars[0].datetime)
+            overview.end = max(overview.end, bars[0].datetime)
+            overview.count = len(list(db.iterator(include_value=False)))
+
+        self.overview_db.put(prefix.encode(), pickle.dumps(overview))
 
         return True
 
@@ -156,6 +158,9 @@ class LeveldbDatabase(BaseDatabase):
 
             wb.write()
 
+        # 删除汇总
+        self.overview_db.delete(prefix.encode())
+
         return count
 
     def delete_tick_data(
@@ -182,30 +187,20 @@ class LeveldbDatabase(BaseDatabase):
 
     def get_bar_overview(self) -> List[BarOverview]:
         """查询数据库中的K线汇总信息"""
-        prefix = "BarOverview" + "|"
-        data: List[BarOverview] = []
-        sub_db = self.db.prefixed_db(prefix.encode())
-        for key, value in sub_db:
-            value = pickle.loads(value)
-            key = key.decode()
-            symbol = value["symbol"]
-            exchange = value["exchange"].value
-            interval = value["interval"].value
-            count = value["count"]
-            start = value["start"]
-            start = datetime.strptime(start, "%Y-%m-%d %H:%M:%S")
-            end = value["end"]
-            end = datetime.strptime(end, "%Y-%m-%d %H:%M:%S")
-            overview = BarOverview(symbol, Exchange(exchange), Interval(interval), count, start, end)
-            data.append(overview)
-        return data
+        overviews: List[BarOverview] = []
+
+        for _, value in self.overview_db.iterator():
+            overview: BarOverview = pickle.loads(value)
+            overviews.append(overview)
+
+        return overviews
 
 
 def generate_bar_prefix(symbol: str, exchange: Exchange, interval: Interval) -> str:
     """生成K线数据前缀"""
-    return f"{interval.value}-{exchange.value}-{symbol}"
+    return f"{interval.value}-{exchange.value}-{symbol}-"
 
 
 def generate_tick_prefix(symbol: str, exchange: Exchange) -> str:
     """生成Tick数据前缀"""
-    return f"{exchange.value}-{symbol}"
+    return f"{exchange.value}-{symbol}-"
