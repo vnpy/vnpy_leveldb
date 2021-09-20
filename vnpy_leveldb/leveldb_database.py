@@ -10,8 +10,7 @@ from vnpy.trader.utility import get_file_path
 from vnpy.trader.database import (
     BaseDatabase,
     BarOverview,
-    DB_TZ,
-    convert_tz
+    DB_TZ
 )
 from vnpy.trader.setting import SETTINGS
 
@@ -26,9 +25,9 @@ class LeveldbDatabase(BaseDatabase):
 
         self.db: plyvel.DB = plyvel.DB(filepath, create_if_missing=True)
 
-        self.bar_db: plyvel.DB = self.db.prefixed_db(b"bar-")
-        self.tick_db: plyvel.DB = self.db.prefixed_db(b"tick-")
-        self.overview_db: plyvel.DB = self.db.prefixed_db(b"overview-")
+        self.bar_db: plyvel.DB = self.db.prefixed_db(b"bar|")
+        self.tick_db: plyvel.DB = self.db.prefixed_db(b"tick|")
+        self.overview_db: plyvel.DB = self.db.prefixed_db(b"overview|")
 
     def save_bar_data(self, bars: List[BarData]) -> bool:
         """保存K线数据"""
@@ -40,9 +39,11 @@ class LeveldbDatabase(BaseDatabase):
         # 批量写入数据
         with db.write_batch() as wb:
             for bar in bars:
+                bar.datetime = bar.datetime.astimezone(DB_TZ)       # 转换时区
                 key = str(bar.datetime).encode()
                 value = pickle.dumps(bar)
                 wb.put(key, value)
+
             wb.write()
 
         # 更新K线汇总数据
@@ -77,6 +78,7 @@ class LeveldbDatabase(BaseDatabase):
         # 批量写入数据
         with db.write_batch() as wb:
             for tick in ticks:
+                tick.datetime = tick.datetime.astimezone(DB_TZ)     # 转换时区
                 key = str(tick.datetime).encode()
                 value = pickle.dumps(tick)
                 wb.put(key, value)
@@ -100,11 +102,12 @@ class LeveldbDatabase(BaseDatabase):
         # 读取数据
         bars: List[BarData] = []
 
-        for _, value in db.iterator(
+        for value in db.iterator(
             start=str(start).encode(),
             stop=str(end).encode(),
             include_start=True,
-            include_stop=True
+            include_stop=True,
+            include_key=False
         ):
             bar: BarData = pickle.loads(value)
             bars.append(bar)
@@ -126,11 +129,12 @@ class LeveldbDatabase(BaseDatabase):
         # 读取数据
         ticks: List[TickData] = []
 
-        for _, value in db.iterator(
+        for value in db.iterator(
             start=str(start).encode(),
             stop=str(end).encode(),
             include_start=True,
-            include_stop=True
+            include_stop=True,
+            include_key=False
         ):
             tick: TickData = pickle.loads(value)
             ticks.append(tick)
@@ -147,12 +151,12 @@ class LeveldbDatabase(BaseDatabase):
         # 获取子数据库
         prefix = generate_bar_prefix(symbol, exchange, interval)
         db: plyvel.DB = self.bar_db.prefixed_db(prefix.encode())
-        
+
         # 遍历删除
         count = 0
 
         with db.write_batch() as wb:
-            for key, _  in db.iterator():
+            for key in db.iterator(include_value=False):
                 count += 1
                 wb.delete(key)
 
@@ -172,12 +176,12 @@ class LeveldbDatabase(BaseDatabase):
         # 获取子数据库
         prefix = generate_tick_prefix(symbol, exchange)
         db: plyvel.DB = self.tick_db.prefixed_db(prefix.encode())
-        
+
         # 遍历删除
         count = 0
 
         with db.write_batch() as wb:
-            for key, _  in db.iterator():
+            for key in db.iterator(include_value=False):
                 count += 1
                 wb.delete(key)
 
@@ -189,7 +193,7 @@ class LeveldbDatabase(BaseDatabase):
         """查询数据库中的K线汇总信息"""
         overviews: List[BarOverview] = []
 
-        for _, value in self.overview_db.iterator():
+        for value in self.overview_db.iterator(include_key=False):
             overview: BarOverview = pickle.loads(value)
             overviews.append(overview)
 
@@ -198,9 +202,9 @@ class LeveldbDatabase(BaseDatabase):
 
 def generate_bar_prefix(symbol: str, exchange: Exchange, interval: Interval) -> str:
     """生成K线数据前缀"""
-    return f"{interval.value}-{exchange.value}-{symbol}-"
+    return f"{interval.value}|{exchange.value}|{symbol}|"
 
 
 def generate_tick_prefix(symbol: str, exchange: Exchange) -> str:
     """生成Tick数据前缀"""
-    return f"{exchange.value}-{symbol}-"
+    return f"{exchange.value}|{symbol}|"
