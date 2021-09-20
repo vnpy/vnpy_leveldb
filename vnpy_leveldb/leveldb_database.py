@@ -1,4 +1,3 @@
-""""""
 from datetime import datetime
 from typing import List
 import pickle
@@ -14,9 +13,7 @@ from vnpy.trader.database import (
     DB_TZ,
     convert_tz
 )
-
-path = str(get_file_path("leveldb"))
-db = plyvel.DB(path, create_if_missing=True)
+from vnpy.trader.setting import SETTINGS
 
 
 class LeveldbDatabase(BaseDatabase):
@@ -24,7 +21,10 @@ class LeveldbDatabase(BaseDatabase):
 
     def __init__(self) -> None:
         """"""
-        self.db = db
+        filename: str = SETTINGS["database.database"]
+        filepath: str = str(get_file_path(filename))
+
+        self.db: plyvel.DB = plyvel.DB(filepath, create_if_missing=True)
 
     def save_bar_data(self, bars: List[BarData]) -> bool:
         """保存K线数据"""
@@ -58,7 +58,7 @@ class LeveldbDatabase(BaseDatabase):
         # 更新K线汇总数据
         bar_overview_key = "BarOverview" + "|" + exchange_symbol + "|" + interval
         bar_prefix = "Bar" + "|" + exchange_symbol + "|" + interval + "|"
-        sub_db = db.prefixed_db(bar_prefix.encode())
+        sub_db = self.db.prefixed_db(bar_prefix.encode())
         loaded_bars: List[tuple] = []
         for key, value in sub_db:
             loaded_bars.append((key, value))
@@ -71,7 +71,7 @@ class LeveldbDatabase(BaseDatabase):
         overview.end = end
         d = overview.__dict__
         overview_value = pickle.dumps(d)
-        db.put(bar_overview_key.encode(), overview_value)
+        self.db.put(bar_overview_key.encode(), overview_value)
 
         return True
 
@@ -112,7 +112,7 @@ class LeveldbDatabase(BaseDatabase):
         vt_symbol = f"{symbol}.{exchange.value}"
         # 从pre库中提取，减小搜索范围，提高速度
         prefix = "Bar" + "|" + exchange.value + "-" + symbol + "|" + interval.value + "|"
-        sub_db = db.prefixed_db(prefix.encode())
+        sub_db = self.db.prefixed_db(prefix.encode())
         start_time = start.strftime("%Y-%m-%d %H:%M:%S")
         end_time = end.strftime("%Y-%m-%d %H:%M:%S")
         for key, value in sub_db.iterator(start=start_time.encode(), include_start=True,
@@ -148,7 +148,7 @@ class LeveldbDatabase(BaseDatabase):
         vt_symbol = f"{symbol}.{exchange.value}"
         # 从pre库中提取，减小搜索范围，提高速度
         prefix = "Tick" + "|" + exchange.value + "-" + symbol + "|"
-        sub_db = db.prefixed_db(prefix.encode())
+        sub_db = self.db.prefixed_db(prefix.encode())
         start_time = start.strftime("%Y-%m-%d %H:%M:%S")
         end_time = end.strftime("%Y-%m-%d %H:%M:%S")
         for key, value in sub_db.iterator(start=start_time.encode(), include_start=True,
@@ -193,7 +193,7 @@ class LeveldbDatabase(BaseDatabase):
     ) -> int:
         """删除K线数据"""
         prefix = "Bar" + "|" + exchange.value + "-" + symbol + "|" + interval.value + "|"
-        sub_db = db.prefixed_db(prefix.encode())
+        sub_db = self.db.prefixed_db(prefix.encode())
         count = 0
         for key, value in sub_db.iterator():
             sub_db.delete(key)
@@ -202,7 +202,7 @@ class LeveldbDatabase(BaseDatabase):
         # 删除K线汇总数据
         exchange_symbol = exchange.value + "-" + symbol
         bar_overview_key = "BarOverview" + "|" + exchange_symbol + "|" + interval.value
-        db.delete(bar_overview_key.encode())
+        self.db.delete(bar_overview_key.encode())
 
         return count
 
@@ -213,7 +213,7 @@ class LeveldbDatabase(BaseDatabase):
     ) -> int:
         """删除TICK数据"""
         prefix = "Tick" + "|" + exchange.value + "-" + symbol + "|"
-        sub_db = db.prefixed_db(prefix.encode())
+        sub_db = self.db.prefixed_db(prefix.encode())
         count = 0
         for key, value in sub_db.iterator():
             sub_db.delete(key)
@@ -225,7 +225,7 @@ class LeveldbDatabase(BaseDatabase):
         """查询数据库中的K线汇总信息"""
         prefix = "BarOverview" + "|"
         data: List[BarOverview] = []
-        sub_db = db.prefixed_db(prefix.encode())
+        sub_db = self.db.prefixed_db(prefix.encode())
         for key, value in sub_db:
             value = pickle.loads(value)
             key = key.decode()
