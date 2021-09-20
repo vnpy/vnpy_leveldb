@@ -26,52 +26,42 @@ class LeveldbDatabase(BaseDatabase):
 
         self.db: plyvel.DB = plyvel.DB(filepath, create_if_missing=True)
 
+        self.bar_db: plyvel.DB = self.db.prefixed_db(b"bar-")
+        self.tick_db: plyvel.DB = self.db.prefixed_db(b"tick-")
+        self.overview_db: plyvel.DB = self.db.prefixed_db(b"overview-")
+
     def save_bar_data(self, bars: List[BarData]) -> bool:
         """保存K线数据"""
-        # 读取主键参数
+        # 获取子数据库
         bar: BarData = bars[0]
-        symbol = bar.symbol
-        exchange = bar.exchange.value
-        interval = bar.interval.value
-        exchange_symbol = exchange + "-" + symbol
+        prefix = generate_bar_prefix(bar.symbol, bar.exchange, bar.interval)
+        db: plyvel.DB = self.bar_db.prefixed_db(prefix.encode())
 
-        # 将BarData数据提取后以元组的形式依次保存进列表中，并调整时区
-        datas: List[tuple] = []
-        for bar in bars:
-            bar.datetime = convert_tz(bar.datetime)
-            rowKey = "Bar" + "|" + exchange + "-" + symbol + "|" + interval + "|" + bar.datetime.strftime("%Y-%m-%d %H:%M:%S")
-            d = bar.__dict__
-            d.pop("gateway_name")
-            d.pop("vt_symbol")
-            d.pop("exchange")
-            d.pop("symbol")
-            d.pop("datetime")
-            rowValue = pickle.dumps(d)
-            datas.append((rowKey, rowValue))
+        # 批量写入数据
+        with db.write_batch() as wb:
+            for bar in bars:
+                key = str(bar.datetime).encode()
+                value = pickle.dumps(bar)
+                wb.put(key, value)
+            wb.write()
 
-        # 使用upsert操作将数据更新到数据库中
-        wb = self.db.write_batch()
-        for data in datas:
-            wb.put(data[0].encode(), data[1])
-        wb.write()
-
-        # 更新K线汇总数据
-        bar_overview_key = "BarOverview" + "|" + exchange_symbol + "|" + interval
-        bar_prefix = "Bar" + "|" + exchange_symbol + "|" + interval + "|"
-        sub_db = self.db.prefixed_db(bar_prefix.encode())
-        loaded_bars: List[tuple] = []
-        for key, value in sub_db:
-            loaded_bars.append((key, value))
-        count = len(bars)
-        start = loaded_bars[0][0].decode()
-        end = loaded_bars[-1][0].decode()
-        overview = BarOverview(symbol, Exchange(exchange), Interval(interval))
-        overview.count = count
-        overview.start = start
-        overview.end = end
-        d = overview.__dict__
-        overview_value = pickle.dumps(d)
-        self.db.put(bar_overview_key.encode(), overview_value)
+        # # 更新K线汇总数据
+        # bar_overview_key = "BarOverview" + "|" + exchange_symbol + "|" + interval
+        # bar_prefix = "Bar" + "|" + exchange_symbol + "|" + interval + "|"
+        # sub_db = self.db.prefixed_db(bar_prefix.encode())
+        # loaded_bars: List[tuple] = []
+        # for key, value in sub_db:
+        #     loaded_bars.append((key, value))
+        # count = len(bars)
+        # start = loaded_bars[0][0].decode()
+        # end = loaded_bars[-1][0].decode()
+        # overview = BarOverview(symbol, Exchange(exchange), Interval(interval))
+        # overview.count = count
+        # overview.start = start
+        # overview.end = end
+        # d = overview.__dict__
+        # overview_value = pickle.dumps(d)
+        # self.db.put(bar_overview_key.encode(), overview_value)
 
         return True
 
@@ -108,32 +98,22 @@ class LeveldbDatabase(BaseDatabase):
         end: datetime
     ) -> List[BarData]:
         """读取K线数据"""
+        # 获取子数据库
+        prefix = generate_bar_prefix(symbol, exchange, interval)
+        db: plyvel.DB = self.bar_db.prefixed_db(prefix.encode())
+
+        # 读取数据
         bars: List[BarData] = []
-        vt_symbol = f"{symbol}.{exchange.value}"
-        # 从pre库中提取，减小搜索范围，提高速度
-        prefix = "Bar" + "|" + exchange.value + "-" + symbol + "|" + interval.value + "|"
-        sub_db = self.db.prefixed_db(prefix.encode())
-        start_time = start.strftime("%Y-%m-%d %H:%M:%S")
-        end_time = end.strftime("%Y-%m-%d %H:%M:%S")
-        for key, value in sub_db.iterator(start=start_time.encode(), include_start=True,
-                                          stop=end_time.encode(), include_stop=True):
-            time = key.decode()
-            row = pickle.loads(value)
 
-            date_time = datetime.strptime(time, "%Y-%m-%d %H:%M:%S")
-            date_time = datetime.fromtimestamp(date_time.timestamp(), DB_TZ)
-            tmp = BarData("DB", symbol, exchange, date_time)
-            tmp.volume = row["volume"]
-            tmp.turnover = row["turnover"]
-            tmp.open_interest = row["open_interest"]
-            tmp.open_price = row["open_price"]
-            tmp.high_price = row["high_price"]
-            tmp.low_price = row["low_price"]
-            tmp.close_price = row["close_price"]
-            tmp.interval = interval
-            tmp.vt_symbol = vt_symbol
+        for _, value in db.iterator(
+            start=str(start).encode(),
+            stop=str(end).encode(),
+            include_start=True,
+            include_stop=True
+        ):
+            bar = pickle.loads(value)
+            bars.append(bar)
 
-            bars.append(tmp)
         return bars
 
     def load_tick_data(
@@ -240,3 +220,13 @@ class LeveldbDatabase(BaseDatabase):
             overview = BarOverview(symbol, Exchange(exchange), Interval(interval), count, start, end)
             data.append(overview)
         return data
+
+
+def generate_bar_prefix(symbol: str, exchange: Exchange, interval: Interval) -> str:
+    """生成K线数据前缀"""
+    return f"{interval.value}-{exchange.value}-{symbol}"
+
+
+def generate_tick_prefix(symbol: str, exchange: Exchange) -> str:
+    """生成Tick数据前缀"""
+    return f"{exchange.value}-{symbol}"
