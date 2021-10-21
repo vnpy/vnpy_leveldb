@@ -12,7 +12,7 @@
 
 ## 说明
 
-基于plyvel-win32开发的LevelDB数据库接口。
+基于plyvel-win32/plyvel开发的LevelDB数据库接口（不支持Mac系统）。
 
 ## 使用
 
