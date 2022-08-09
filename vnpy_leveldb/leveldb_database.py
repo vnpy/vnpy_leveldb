@@ -26,7 +26,7 @@ class LeveldbDatabase(BaseDatabase):
         self.bar_overview_db: plyvel.DB = self.db.prefixed_db(b"bar_overview|")
         self.tick_overview_db: plyvel.DB = self.db.prefixed_db(b"tick_overview|")
 
-    def save_bar_data(self, bars: List[BarData]) -> bool:
+    def save_bar_data(self, bars: List[BarData], stream: bool = False) -> bool:
         """保存K线数据"""
         # 获取子数据库
         bar: BarData = bars[0]
@@ -55,6 +55,10 @@ class LeveldbDatabase(BaseDatabase):
                 start=bars[0].datetime,
                 end=bars[-1].datetime
             )
+        elif stream:
+            overview: BarOverview = pickle.loads(buf)
+            overview.end = bars[-1].datetime
+            overview.count += len(bars)
         else:
             overview: BarOverview = pickle.loads(buf)
             overview.start = min(overview.start, bars[0].datetime)
@@ -65,7 +69,7 @@ class LeveldbDatabase(BaseDatabase):
 
         return True
 
-    def save_tick_data(self, ticks: List[TickData]) -> bool:
+    def save_tick_data(self, ticks: List[TickData], stream: bool = False) -> bool:
         """保存TICK数据"""
         # 获取子数据库
         tick: TickData = ticks[0]
@@ -92,6 +96,10 @@ class LeveldbDatabase(BaseDatabase):
                 start=ticks[0].datetime,
                 end=ticks[-1].datetime
             )
+        elif stream:
+            overview: BarOverview = pickle.loads(buf)
+            overview.end = ticks[-1].datetime
+            overview.count += len(ticks)
         else:
             overview: TickOverview = pickle.loads(buf)
             overview.start = min(overview.start, ticks[0].datetime)
