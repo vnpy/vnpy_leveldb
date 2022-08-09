@@ -58,7 +58,7 @@ class LeveldbDatabase(BaseDatabase):
         else:
             overview: BarOverview = pickle.loads(buf)
             overview.start = min(overview.start, bars[0].datetime)
-            overview.end = max(overview.end, bars[0].datetime)
+            overview.end = max(overview.end, bars[-1].datetime)
             overview.count = len(list(db.iterator(include_value=False)))
 
         self.bar_overview_db.put(prefix.encode(), pickle.dumps(overview))
@@ -95,7 +95,7 @@ class LeveldbDatabase(BaseDatabase):
         else:
             overview: TickOverview = pickle.loads(buf)
             overview.start = min(overview.start, ticks[0].datetime)
-            overview.end = max(overview.end, ticks[0].datetime)
+            overview.end = max(overview.end, ticks[-1].datetime)
             overview.count = len(list(db.iterator(include_value=False)))
 
         self.tick_overview_db.put(prefix.encode(), pickle.dumps(overview))
