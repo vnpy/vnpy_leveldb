@@ -7,7 +7,7 @@ import plyvel
 from vnpy.trader.constant import Exchange, Interval
 from vnpy.trader.object import BarData, TickData
 from vnpy.trader.utility import get_file_path
-from vnpy.trader.database import BaseDatabase, BarOverview, DB_TZ
+from vnpy.trader.database import BaseDatabase, BarOverview, TickOverview, DB_TZ
 from vnpy.trader.setting import SETTINGS
 
 
@@ -23,7 +23,8 @@ class LeveldbDatabase(BaseDatabase):
 
         self.bar_db: plyvel.DB = self.db.prefixed_db(b"bar|")
         self.tick_db: plyvel.DB = self.db.prefixed_db(b"tick|")
-        self.overview_db: plyvel.DB = self.db.prefixed_db(b"overview|")
+        self.bar_overview_db: plyvel.DB = self.db.prefixed_db(b"bar_overview|")
+        self.tick_overview_db: plyvel.DB = self.db.prefixed_db(b"tick_overview|")
 
     def save_bar_data(self, bars: List[BarData]) -> bool:
         """保存K线数据"""
@@ -43,7 +44,7 @@ class LeveldbDatabase(BaseDatabase):
             wb.write()
 
         # 更新K线汇总数据
-        buf = self.overview_db.get(prefix.encode())
+        buf = self.bar_overview_db.get(prefix.encode())
 
         if not buf:
             overview: BarOverview = BarOverview(
@@ -60,7 +61,7 @@ class LeveldbDatabase(BaseDatabase):
             overview.end = max(overview.end, bars[0].datetime)
             overview.count = len(list(db.iterator(include_value=False)))
 
-        self.overview_db.put(prefix.encode(), pickle.dumps(overview))
+        self.bar_overview_db.put(prefix.encode(), pickle.dumps(overview))
 
         return True
 
@@ -79,6 +80,25 @@ class LeveldbDatabase(BaseDatabase):
                 value = pickle.dumps(tick)
                 wb.put(key, value)
             wb.write()
+
+        # 更新Tick汇总数据
+        buf = self.tick_overview_db.get(prefix.encode())
+
+        if not buf:
+            overview: TickOverview = TickOverview(
+                symbol=tick.symbol,
+                exchange=tick.exchange,
+                count=len(ticks),
+                start=ticks[0].datetime,
+                end=ticks[-1].datetime
+            )
+        else:
+            overview: TickOverview = pickle.loads(buf)
+            overview.start = min(overview.start, ticks[0].datetime)
+            overview.end = max(overview.end, ticks[0].datetime)
+            overview.count = len(list(db.iterator(include_value=False)))
+
+        self.tick_overview_db.put(prefix.encode(), pickle.dumps(overview))
 
         return True
 
@@ -159,7 +179,7 @@ class LeveldbDatabase(BaseDatabase):
             wb.write()
 
         # 删除汇总
-        self.overview_db.delete(prefix.encode())
+        self.bar_overview_db.delete(prefix.encode())
 
         return count
 
@@ -183,14 +203,27 @@ class LeveldbDatabase(BaseDatabase):
 
             wb.write()
 
+        # 删除汇总
+        self.tick_overview_db.delete(prefix.encode())
+
         return count
 
     def get_bar_overview(self) -> List[BarOverview]:
         """查询数据库中的K线汇总信息"""
         overviews: List[BarOverview] = []
 
-        for value in self.overview_db.iterator(include_key=False):
+        for value in self.bar_overview_db.iterator(include_key=False):
             overview: BarOverview = pickle.loads(value)
+            overviews.append(overview)
+
+        return overviews
+
+    def get_tick_overview(self) -> List[TickOverview]:
+        """查询数据库中的K线汇总信息"""
+        overviews: List[TickOverview] = []
+
+        for value in self.tick_overview_db.iterator(include_key=False):
+            overview: TickOverview = pickle.loads(value)
             overviews.append(overview)
 
         return overviews
