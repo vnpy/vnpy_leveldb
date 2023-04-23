@@ -144,7 +144,7 @@ class LeveldbDatabase(BaseDatabase):
         exchange: Exchange,
         start: datetime,
         end: datetime
-    ) -> List[BarData]:
+    ) -> List[TickData]:
         """读取TICK数据"""
         # 获取子数据库
         prefix: str = generate_tick_prefix(symbol, exchange)
